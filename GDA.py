@@ -75,25 +75,32 @@ class GDA:
         self.means = np.zeros(shape=(k,self.numberOfFeatures))
         self.covs = np.zeros(shape=(self.numberOfFeatures,self.numberOfFeatures,k))
         self.createModel()
-def visualizeMVN():
-    fig = plt.figure()
-    ax = fig.add_subplot(211, projection='3d')
-    ax2 = fig.add_subplot(212)
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
-    ax.set_zlabel("Z")
-    ax.set_xlim3d(-2,2)
-    ax.set_ylim3d(-2,2)
-    ax.set_zlim3d(0,1)
-    X, Y = np.mgrid[-2:2:.01, -2:2:.01] # create a 2D mesh grid
-    pos = np.empty(X.shape + (2,))
-    pos[:, :, 0] = X
-    pos[:, :, 1] = Y
-    rv = multivariate_normal(mean=[0, 0], cov=[[0.2, 0], [0, 0.2]])
-    Z = rv.pdf(pos)
-    ax.contour3D(X,Y,Z,100,cmap='viridis')
-    ax2.contour(X,Y,Z)
-    plt.show()
+
+    def visualizeMVN(self):
+        fig = plt.figure()
+        ax = fig.add_subplot(211, projection='3d')
+        ax2 = fig.add_subplot(212)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        min = np.full(shape=(self.numberOfFeatures,1),fill_value=np.inf)
+        max = np.full(shape=(self.numberOfFeatures,1),fill_value=-np.inf)
+        for i in range(self.M):
+            for j in range(self.numberOfFeatures):
+                if (min[j] > self.X[i,j]): min[j] = self.X[i,j]
+                if (max[j] < self.X[i,j]): max[j] = self.X[i,j]    
+        #ax.set_xlim3d(min[0],max[0])
+        #ax.set_ylim3d(min[1],max[1])
+        #ax.set_zlim3d(0,1)
+        X, Y = np.mgrid[min[0]:max[0]:.01, min[1]:max[0]:.01] # create a 2D mesh grid
+        pos = np.empty(X.shape + (2,))
+        pos[:, :, 0] = X
+        pos[:, :, 1] = Y
+        for i in range(self.k):
+            Z = self.rv_MVNs[i].pdf(pos)
+            ax.contour3D(X,Y,Z,100,cmap='viridis')
+            ax2.contour(X,Y,Z)
+        plt.show()
 
 def predict(x,rv1,rv2,rv3):
     print(rv1.pdf(x)*rv3.pmf(0))
@@ -101,10 +108,11 @@ def predict(x,rv1,rv2,rv3):
         
     
 
-X = np.matrix([[4,3],[4.2,3.3],[4.4,3.0],[1.0,2.2],[.9,3.3],[0.2,2.5]])
+X = np.matrix([[4,3],[4.2,3.3],[4.4,3.0],[3.5,2.2],[3.5,3.3],[3.6,2.5]])
 Y = [0,0,0,1,1,1]
 #rv1,rv2,rv3 = GDAa(X,Y)
 model = GDA(X,Y,k=2)
 model.predict([.9,3])
+model.visualizeMVN()
 #x = np.array([1,2])
 #predict([4,3],rv1,rv2,rv3)
