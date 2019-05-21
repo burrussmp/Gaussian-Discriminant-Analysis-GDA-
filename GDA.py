@@ -80,6 +80,8 @@ class GDA:
         fig = plt.figure()
         ax = fig.add_subplot(211, projection='3d')
         ax2 = fig.add_subplot(212)
+        ax2.set_facecolor('black')
+        ax.set_facecolor('black')
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
@@ -92,15 +94,29 @@ class GDA:
         #ax.set_xlim3d(min[0],max[0])
         #ax.set_ylim3d(min[1],max[1])
         #ax.set_zlim3d(0,1)
-        X, Y = np.mgrid[min[0]:max[0]:.01, min[1]:max[0]:.01] # create a 2D mesh grid
-        pos = np.empty(X.shape + (2,))
-        pos[:, :, 0] = X
-        pos[:, :, 1] = Y
+        x, y = np.mgrid[min[0]:max[0]:.01, min[1]:max[0]:.01] # create a 2D mesh grid
+        pos = np.empty(x.shape + (2,))
+        pos[:, :, 0] = x
+        pos[:, :, 1] = y
         for i in range(self.k):
-            Z = self.rv_MVNs[i].pdf(pos)
-            ax.contour3D(X,Y,Z,100,cmap='viridis')
-            ax2.contour(X,Y,Z)
+            z = self.rv_MVNs[i].pdf(pos)
+            ax.contour3D(x,y,z,100,cmap='viridis')
+            ax2.contour(x,y,z)
+        # plot data points
+        ax2.scatter([self.X[self.Y==0,0]],[self.X[self.Y==0,1]],marker = '.')
+        ax2.scatter([self.X[self.Y==1,0]],[self.X[self.Y==1,1]],marker = 'x')
+        """
+        indices = np.
+        for i in range(self.M):
+            marker = ''
+            if (self.Y[i] == 0):
+                marker = '.'
+            else:
+                marker = 'x'
+            ax2.scatter(self.X[i,0],self.X[i,1],marker = marker)
+        """
         plt.show()
+        
 
 def predict(x,rv1,rv2,rv3):
     print(rv1.pdf(x)*rv3.pmf(0))
@@ -109,7 +125,7 @@ def predict(x,rv1,rv2,rv3):
     
 
 X = np.matrix([[4,3],[4.2,3.3],[4.4,3.0],[3.5,2.2],[3.5,3.3],[3.6,2.5]])
-Y = [0,0,0,1,1,1]
+Y = np.array([0,0,0,1,1,1])
 #rv1,rv2,rv3 = GDAa(X,Y)
 model = GDA(X,Y,k=2)
 model.predict([.9,3])
