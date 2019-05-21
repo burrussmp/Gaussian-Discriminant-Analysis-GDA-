@@ -12,31 +12,40 @@ from mpl_toolkits import mplot3d
 from scipy.stats import multivariate_normal
 from scipy.stats import multinomial
 from scipy.stats import bernoulli
+import math
 
 class GDA:
     def findMLE(self):
         # calculate MLEs multinomail ditribution P(Y={0...k-1})
         for i in range(self.M):
-            self.phis[ Y[i] ] = self.phis[ Y[i] ] + 1
+            self.phis[ self.Y[i] ] = self.phis[ self.Y[i] ] + 1
         self.phis = np.divide(self.phis,self.M)
         # calculate mean MLE for MVNs
         occurrences = np.zeros(shape=(self.k,1))
         for i in range(self.M):
-            self.means[Y[i],:] = self.means[Y[i],:] + X[i,:]
-            occurrences[Y[i]] = occurrences[Y[i]] + 1
+            self.means[self.Y[i],:] = self.means[self.Y[i],:] + self.X[i,:]
+            occurrences[self.Y[i]] = occurrences[self.Y[i]] + 1
         self.means = np.divide(self.means,occurrences)
         # calculate cov MLE for MVNs
         occurrences = np.zeros(shape=(self.k,1))
         for i in range(self.M):
-            self.covs[:,:,Y[i]] = self.covs[:,:,Y[i]] + np.transpose(np.add(X[i,:],-1*self.means[Y[i],:]))*np.add(X[i,:],-1*self.means[Y[i],:]) 
-            occurrences[Y[i]] = occurrences[Y[i]] + 1
+            ls = np.squeeze(self.covs[:,:,self.Y[i]])
+            rs = np.transpose(np.add(self.X[i,:],-1*self.means[self.Y[i],:]))*np.add(self.X[i,:],-1*self.means[self.Y[i],:])
+            sum = ls + rs
+            sum = np.expand_dims(sum,3)
+            self.covs[:,:,self.Y[i]] = sum
+            occurrences[self.Y[i]] = occurrences[self.Y[i]] + 1
         for j in range(self.k):
             self.covs[:,:,j] = np.divide(self.covs[:,:,j],occurrences[j])
         self.rv_bernoullis = []
         self.rv_MVNs = []
         for i in range(self.k):
             self.rv_bernoullis.append(bernoulli(p=self.phis[i]))
-            self.rv_MVNs.append(multivariate_normal(mean=self.means[i,:], cov=self.covs[:,:,i]))
+            try:
+                self.rv_MVNs.append(multivariate_normal(mean=self.means[i,:], cov=self.covs[:,:,i],allow_singular=False))
+            except:
+                self.rv_MVNs.append(multivariate_normal(mean=self.means[i,:], cov=self.covs[:,:,i],allow_singular=True))
+                print("WARNING: Singular matrix for model %d consider increasing dataset for model" %i)
     def createModel(self):
         print("######################################")
         print("Gaussian Discriminant Analysis")
@@ -58,25 +67,69 @@ class GDA:
         print("######################################")
 
     def predict(self,x):
-        probabilitiesNotNormalized = np.zeros(shape=(1,self.k))
+        probability = np.zeros(shape=(1,self.k))
+        p_x = 0.0
+        model = 0
+        best = -np.inf
         for i in range(self.k):
-            probabilitiesNotNormalized[:,i] = self.rv_MVNs[i].pdf(x)*self.rv_bernoullis[i].pmf(1)
-        print(probabilitiesNotNormalized)
+            probability[:,i] = self.rv_MVNs[i].pdf(x)*self.rv_bernoullis[i].pmf(1)
+            if (probability[:,i]>best):
+                best = probability[:,i]
+                model = i
+            p_x = p_x + self.rv_MVNs[i].pdf(x)*self.rv_bernoullis[i].pmf(1) 
+        probability = np.divide(probability,p_x)
+        return model
+
+    def validate(self,validationX,validationY):
+        correct = 0.0
+        categoriesTested = np.zeros(shape=(self.k,1))
+        categoriesRight = np.zeros(shape=(self.k,1))
+        for i in range(len(validationY)):
+            predictedCategory = self.predict(validationX[i,:])
+            categoriesTested[validationY[i]] = categoriesTested[validationY[i]] + 1
+            if (predictedCategory == validationY[i]):
+                correct = correct + 1.0
+                categoriesRight[validationY[i]] = categoriesRight[validationY[i]] + 1
+        print("######################################")
+        print("VALIDATION")
+        print("N = %d" %(len(validationY)))
+        print("Categories validated")
+        for i in range(self.k):
+            print("Category %d: validated=%d | correct = %d" %(i,categoriesTested[i],categoriesRight[i]))
+        print("Total accuracy (% correct): {:.2f}".format(correct/len(validationY)))
+        print("######################################")
+
     # takes in input matrix X where each row is a feature vector and output Y of k categories
     def __init__(self,X,Y,k,verbose=False):
-        self.X = X      # input
+        self.allInputs = X
+        self.k = k # number of categories
         self.Y = Y      # output category
         self.M = len(Y) # number of input-output pairs
-        self.k = k      # number of categories
         self.verbose = verbose # determine how much to tell the user
-        self.numberOfFeatures = X.shape[1]   # number of input variables
-        self.phis = np.zeros(shape=(k,1))
-        print(self.phis)
-        self.means = np.zeros(shape=(k,self.numberOfFeatures))
-        self.covs = np.zeros(shape=(self.numberOfFeatures,self.numberOfFeatures,k))
+        self.reset(X=self.allInputs)
+    
+    def reset(self,X):
+        self.X = np.copy(X)      # input
+        self.numberOfFeatures = len(self.X[0])   # number of input variables
+        self.phis = np.zeros(shape=(self.k,1))
+        self.means = np.zeros(shape=(self.k,self.numberOfFeatures))
+        self.covs = np.zeros(shape=(self.numberOfFeatures,self.numberOfFeatures,self.k))
         self.createModel()
 
-    def visualizeMVN(self):
+    def visualizeMVN(self,variables=None):
+        if (variables == None):
+            v1 = int(input("Enter first variable you would like to visualize:   "))
+            v2 = int(input("Enter second variable you would like to visualize:  "))
+            variables = [v1, v2]
+        if (len(variables) != 2):
+            print("Visualization only works for 2 variables currently and %d variables were specified..." %(len(variables)))
+            return
+        if (variables[0] > len(self.X[0]) or variables[1] > len(self.X[0])):
+            print("Only %d variables were used to construct the model" %(len(variables)))
+            return
+        print("Creating visual of GDA for variables %d and %d" %(variables[0],variables[1]))
+        print("Recalculating MLEs for model parameters")
+        self.reset(self.X[:,variables])
         fig = plt.figure()
         ax = fig.add_subplot(211, projection='3d')
         ax2 = fig.add_subplot(212)
@@ -91,10 +144,7 @@ class GDA:
             for j in range(self.numberOfFeatures):
                 if (min[j] > self.X[i,j]): min[j] = self.X[i,j]
                 if (max[j] < self.X[i,j]): max[j] = self.X[i,j]    
-        #ax.set_xlim3d(min[0],max[0])
-        #ax.set_ylim3d(min[1],max[1])
-        #ax.set_zlim3d(0,1)
-        x, y = np.mgrid[min[0]:max[0]:.01, min[1]:max[0]:.01] # create a 2D mesh grid
+        x, y = np.mgrid[min[0]:max[0]:100j, min[1]:max[1]:100j] # create a 2D mesh grid
         pos = np.empty(x.shape + (2,))
         pos[:, :, 0] = x
         pos[:, :, 1] = y
@@ -103,32 +153,54 @@ class GDA:
             ax.contour3D(x,y,z,100,cmap='viridis')
             ax2.contour(x,y,z)
         # plot data points
-        ax2.scatter([self.X[self.Y==0,0]],[self.X[self.Y==0,1]],marker = '.')
-        ax2.scatter([self.X[self.Y==1,0]],[self.X[self.Y==1,1]],marker = 'x')
-        """
-        indices = np.
-        for i in range(self.M):
-            marker = ''
-            if (self.Y[i] == 0):
-                marker = '.'
-            else:
-                marker = 'x'
-            ax2.scatter(self.X[i,0],self.X[i,1],marker = marker)
-        """
-        plt.show()
-        
+        Y = np.squeeze(self.Y)
+        ax2.scatter([self.X[Y==0,0]],[self.X[Y==0,1]],marker = '.')
+        ax2.scatter([self.X[Y==1,0]],[self.X[Y==1,1]],marker = 'x')
+        # reset parameters
+        print("Recalculating MLEs for model parameters")
+        self.reset(self.allInputs)
+        plt.show(block=False)
 
-def predict(x,rv1,rv2,rv3):
-    print(rv1.pdf(x)*rv3.pmf(0))
-    print(rv2.pdf(x)*rv3.pmf(1))
-        
-    
+# returns dataset in matrix fomat
+def readDataSet(name='wdbc.data'):
+    data= []
+    with open('wdbc.data','r') as filestream:
+        for line in filestream:
+            currentline = np.array(line.split(","))
+            data.append(currentline)
+    dataMatrix = np.empty(shape=(len(data),len(data[0])),dtype=object)
+    for i in range(len(data)):
+        dataMatrix[i,:] = data[i]
+    return dataMatrix
 
-X = np.matrix([[4,3],[4.2,3.3],[4.4,3.0],[3.5,2.2],[3.5,3.3],[3.6,2.5]])
-Y = np.array([0,0,0,1,1,1])
-#rv1,rv2,rv3 = GDAa(X,Y)
-model = GDA(X,Y,k=2)
-model.predict([.9,3])
-model.visualizeMVN()
-#x = np.array([1,2])
-#predict([4,3],rv1,rv2,rv3)
+def createTrainingAndValidation(X,Y,sizeOfTraining=0.8):
+    indices = np.arange(len(Y))
+    np.random.shuffle(indices)
+    trainingIndices=indices[0:math.floor(sizeOfTraining*len(Y))]
+    validationIndices = indices[math.ceil(sizeOfTraining*len(Y)):]
+    trainingX = X[trainingIndices,:]
+    trainingY = Y[trainingIndices]
+    validationX = X[validationIndices,:]
+    validationY = Y[validationIndices]
+    return trainingX,trainingY,validationX,validationY
+
+# data => unformatted data matrix
+# inputcol => array of indices representing the columns for real-valued inputs
+# outputcol => array of indices representing the output
+def parseDataSet(data,inputCol,outputCol):
+    Y = np.empty(shape=(len(data),len(outputCol)),dtype=int)
+    X = np.zeros(shape=(len(data),len(inputCol)))
+    X = data[:,inputCol].astype(dtype=float)
+    categories = np.unique(data[:,outputCol])
+    for i in range(len(Y)):
+        Y[i] = np.where(categories==data[i,outputCol])
+    return X,Y
+  
+data = readDataSet()
+X,Y = parseDataSet(data,inputCol=range(2,32),outputCol=[1])
+trainingX,trainingY,validationX,validationY = createTrainingAndValidation(X,Y,sizeOfTraining=0.8)
+model = GDA(trainingX,trainingY,k=2)
+model.validate(validationX,validationY)
+while 1:
+    model.visualizeMVN()
+
